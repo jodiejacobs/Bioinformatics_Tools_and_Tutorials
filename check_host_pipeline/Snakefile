@@ -1,0 +1,393 @@
+# Snakefile for host and Wolbachia strain identity verification
+# Supports both ONT (minimap2) and Illumina (BWA-MEM) sequencing
+
+configfile: "config.yaml"
+
+# Parse samples from samples.txt file
+def parse_samples(samples_file):
+    """Parse samples.txt file with format: sample_name\tseq_type\tR1\t[R2]"""
+    import re
+    samples = {}
+    with open(samples_file, 'r') as f:
+        for line_num, line in enumerate(f, 1):
+            if line.startswith('#') or not line.strip():
+                continue
+            # Split by tabs or multiple spaces (to handle both formats)
+            # First try splitting by tab
+            parts = line.strip().split('\t')
+            # If we only got 1 part, the file likely uses spaces instead of tabs
+            if len(parts) == 1:
+                # Split by multiple spaces (2 or more)
+                parts = re.split(r'\s{2,}', line.strip())
+            # Clean up each part
+            parts = [p.strip() for p in parts if p.strip()]
+
+            if len(parts) < 3:
+                raise ValueError(f"Line {line_num} in {samples_file} has insufficient fields. Expected at least 3 fields, got {len(parts)}.\nLine content: {line.strip()}")
+
+            sample_name = parts[0]
+            seq_type = parts[1].upper()  # ONT or ILLUMINA
+
+            if seq_type == 'ONT':
+                samples[sample_name] = {
+                    'seq_type': 'ONT',
+                    'reads': parts[2]
+                }
+            elif seq_type == 'ILLUMINA':
+                # Handle both tab-separated and comma-separated R1/R2
+                if len(parts) == 4:
+                    # Tab-separated: sample\tILLUMINA\tR1\tR2
+                    r1, r2 = parts[2], parts[3]
+                else:
+                    # Comma-separated: sample\tILLUMINA\tR1,R2
+                    reads = parts[2].split(',')
+                    r1 = reads[0].strip()
+                    r2 = reads[1].strip()
+
+                samples[sample_name] = {
+                    'seq_type': 'ILLUMINA',
+                    'R1': r1,
+                    'R2': r2
+                }
+            else:
+                raise ValueError(f"Unknown sequencing type: {seq_type}")
+    return samples
+
+# Get samples file from config, with default
+SAMPLES_FILE = config.get("samples_file", "samples.txt")
+SAMPLES_DICT = parse_samples(SAMPLES_FILE)
+SAMPLES = list(SAMPLES_DICT.keys())
+ORGANISMS = list(config["references"].keys())
+
+# Separate samples by sequencing type
+ONT_SAMPLES = [s for s, info in SAMPLES_DICT.items() if info['seq_type'] == 'ONT']
+ILLUMINA_SAMPLES = [s for s, info in SAMPLES_DICT.items() if info['seq_type'] == 'ILLUMINA']
+
+# Get results directory from config, with default
+RESULTS_DIR = config.get("results_dir", "results")
+
+# Helper functions
+def get_seq_type(wildcards):
+    return SAMPLES_DICT[wildcards.sample]['seq_type']
+
+def get_ont_reads(wildcards):
+    return SAMPLES_DICT[wildcards.sample]['reads']
+
+def get_illumina_r1(wildcards):
+    return SAMPLES_DICT[wildcards.sample]['R1']
+
+def get_illumina_r2(wildcards):
+    return SAMPLES_DICT[wildcards.sample]['R2']
+
+rule all:
+    input:
+        expand(f"{RESULTS_DIR}/{{sample}}/summary_report.txt", sample=SAMPLES),
+        expand(f"{RESULTS_DIR}/{{sample}}/coverage_plot.pdf", sample=SAMPLES),
+        f"{RESULTS_DIR}/combined_summary.tsv"
+
+# Step 1: Create metagenome reference with explicit prefixes
+rule create_metagenome:
+    input:
+        refs = lambda wildcards: [config["references"][org]["path"] for org in ORGANISMS]
+    output:
+        fasta = "resources/metagenome.fasta"
+    params:
+        ref_dict = config["references"]
+    log:
+        "logs/create_metagenome.log"
+    threads: 1
+    resources:
+        mem_mb = 8000,
+        time = "01:00:00"
+    run:
+        import gzip
+
+        # Write metagenome fasta
+        with open(output.fasta, 'w') as outf, open(log[0], 'w') as logf:
+            for org, ref_info in params.ref_dict.items():
+                ref_path = ref_info['path']
+                print(f"Adding {org} from {ref_path}", file=logf)
+
+                # Open file (handle gzip)
+                if ref_path.endswith('.gz'):
+                    inf = gzip.open(ref_path, 'rt')
+                else:
+                    inf = open(ref_path, 'r')
+
+                # Process sequences
+                for line in inf:
+                    if line.startswith('>'):
+                        # Add organism prefix to sequence headers
+                        outf.write(f">{org}_{line[1:]}")
+                    else:
+                        outf.write(line)
+
+                inf.close()
+
+# Step 2a: Index metagenome for minimap2 (ONT)
+rule index_minimap2:
+    input:
+        fasta = "resources/metagenome.fasta"
+    output:
+        mmi = "resources/metagenome.mmi"
+    log:
+        "logs/index_minimap2.log"
+    threads: 1
+    resources:
+        mem_mb = 8000,
+        time = "01:00:00"
+    conda:
+        "envs/alignment.yaml"
+    shell:
+        """
+        minimap2 -x map-ont -d {output.mmi} {input.fasta} 2> {log}
+        """
+
+# Step 2b: Index metagenome for BWA (Illumina)
+rule index_bwa:
+    input:
+        fasta = "resources/metagenome.fasta"
+    output:
+        amb = "resources/metagenome.fasta.amb",
+        ann = "resources/metagenome.fasta.ann",
+        bwt = "resources/metagenome.fasta.bwt",
+        pac = "resources/metagenome.fasta.pac",
+        sa = "resources/metagenome.fasta.sa"
+    log:
+        "logs/index_bwa.log"
+    threads: 1
+    resources:
+        mem_mb = 8000,
+        time = "01:00:00"
+    conda:
+        "envs/alignment.yaml"
+    shell:
+        """
+        bwa index {input.fasta} 2> {log}
+        """
+
+# Step 3a: Align ONT reads with minimap2
+rule align_ont:
+    input:
+        fastq = get_ont_reads,
+        mmi = "resources/metagenome.mmi"
+    output:
+        bam = f"{RESULTS_DIR}/{{sample}}/aligned.bam",
+        bai = f"{RESULTS_DIR}/{{sample}}/aligned.bam.bai"
+    log:
+        "logs/{sample}/align.log"
+    threads: 16
+    resources:
+        mem_mb = 32000,
+        time = "06:00:00"
+    wildcard_constraints:
+        sample = "|".join(ONT_SAMPLES)
+    conda:
+        "envs/alignment.yaml"
+    shell:
+        """
+        minimap2 -ax map-ont -t {threads} {input.mmi} {input.fastq} 2> {log} | \
+            samtools view -bS - | \
+            samtools sort -@ 8 -o {output.bam}
+
+        samtools index {output.bam}
+        """
+
+# Step 3b: Align Illumina reads with BWA-MEM
+rule align_illumina:
+    input:
+        r1 = get_illumina_r1,
+        r2 = get_illumina_r2,
+        fasta = "resources/metagenome.fasta",
+        amb = "resources/metagenome.fasta.amb",
+        ann = "resources/metagenome.fasta.ann",
+        bwt = "resources/metagenome.fasta.bwt",
+        pac = "resources/metagenome.fasta.pac",
+        sa = "resources/metagenome.fasta.sa"
+    output:
+        bam = f"{RESULTS_DIR}/{{sample}}/aligned.bam",
+        bai = f"{RESULTS_DIR}/{{sample}}/aligned.bam.bai"
+    log:
+        "logs/{sample}/align.log"
+    threads: 16
+    resources:
+        mem_mb = 32000,
+        time = "06:00:00"
+    wildcard_constraints:
+        sample = "|".join(ILLUMINA_SAMPLES)
+    conda:
+        "envs/alignment.yaml"
+    shell:
+        """
+        bwa mem -t {threads} {input.fasta} {input.r1} {input.r2} 2> {log} | \
+            samtools view -bS - | \
+            samtools sort -@ 8 -o {output.bam}
+
+        samtools index {output.bam}
+        """
+
+# Step 4: Get idxstats for all references
+rule get_idxstats:
+    input:
+        bam = f"{RESULTS_DIR}/{{sample}}/aligned.bam",
+        bai = f"{RESULTS_DIR}/{{sample}}/aligned.bam.bai"
+    output:
+        idxstats = f"{RESULTS_DIR}/{{sample}}/idxstats.txt"
+    log:
+        "logs/{sample}/idxstats.log"
+    threads: 1
+    resources:
+        mem_mb = 4000,
+        time = "00:30:00"
+    conda:
+        "envs/alignment.yaml"
+    shell:
+        """
+        samtools idxstats {input.bam} > {output.idxstats} 2> {log}
+        """
+
+# Step 5: Split BAM by organism
+rule split_bam_by_organism:
+    input:
+        bam = f"{RESULTS_DIR}/{{sample}}/aligned.bam",
+        bai = f"{RESULTS_DIR}/{{sample}}/aligned.bam.bai",
+        idxstats = f"{RESULTS_DIR}/{{sample}}/idxstats.txt"
+    output:
+        split_bams = expand(f"{RESULTS_DIR}/{{{{sample}}}}/split/{{org}}.bam",
+                           org=ORGANISMS),
+        split_bais = expand(f"{RESULTS_DIR}/{{{{sample}}}}/split/{{org}}.bam.bai",
+                           org=ORGANISMS)
+    params:
+        organisms = ORGANISMS,
+        outdir = f"{RESULTS_DIR}/{{sample}}/split"
+    log:
+        "logs/{sample}/split_bam.log"
+    threads: 4
+    resources:
+        mem_mb = 16000,
+        time = "02:00:00"
+    conda:
+        "envs/alignment.yaml"
+    shell:
+        """
+        mkdir -p {params.outdir}
+
+        for org in {params.organisms}; do
+            echo "Extracting $org..." >> {log}
+
+            # Get all contigs with this prefix
+            grep "^${{org}}_" {input.idxstats} | cut -f1 > {params.outdir}/${{org}}_contigs.txt
+
+            # Check if any contigs found
+            if [ -s {params.outdir}/${{org}}_contigs.txt ]; then
+                # Extract reads mapping to these contigs
+                samtools view -b -h {input.bam} \
+                    $(cat {params.outdir}/${{org}}_contigs.txt | tr '\n' ' ') \
+                    > {params.outdir}/${{org}}.bam 2>> {log}
+
+                samtools index {params.outdir}/${{org}}.bam
+            else
+                echo "No contigs found for $org, creating empty BAM" >> {log}
+                samtools view -bH {input.bam} > {params.outdir}/${{org}}.bam
+                samtools index {params.outdir}/${{org}}.bam
+            fi
+        done
+        """
+
+# Step 6: Get statistics for each organism
+rule get_organism_stats:
+    input:
+        bam = f"{RESULTS_DIR}/{{sample}}/split/{{org}}.bam",
+        bai = f"{RESULTS_DIR}/{{sample}}/split/{{org}}.bam.bai"
+    output:
+        flagstat = f"{RESULTS_DIR}/{{sample}}/split/{{org}}.flagstat",
+        coverage = f"{RESULTS_DIR}/{{sample}}/split/{{org}}.coverage"
+    log:
+        "logs/{sample}/stats_{org}.log"
+    threads: 1
+    resources:
+        mem_mb = 4000,
+        time = "00:30:00"
+    conda:
+        "envs/alignment.yaml"
+    shell:
+        """
+        samtools flagstat {input.bam} > {output.flagstat} 2> {log}
+        samtools coverage {input.bam} > {output.coverage} 2>> {log}
+        """
+
+# Step 7: Generate summary report
+rule generate_summary:
+    input:
+        bam = f"{RESULTS_DIR}/{{sample}}/aligned.bam",
+        idxstats = f"{RESULTS_DIR}/{{sample}}/idxstats.txt",
+        flagstats = expand(f"{RESULTS_DIR}/{{{{sample}}}}/split/{{org}}.flagstat",
+                          org=ORGANISMS),
+        coverages = expand(f"{RESULTS_DIR}/{{{{sample}}}}/split/{{org}}.coverage",
+                          org=ORGANISMS)
+    output:
+        summary = f"{RESULTS_DIR}/{{sample}}/summary_report.txt",
+        tsv = f"{RESULTS_DIR}/{{sample}}/summary_data.tsv"
+    params:
+        organisms = ORGANISMS,
+        ref_dict = config["references"],
+        sample = "{sample}",
+        avg_read_length = lambda wildcards: config.get("avg_read_length_illumina", 150) if SAMPLES_DICT[wildcards.sample]['seq_type'] == 'ILLUMINA' else config.get("avg_read_length_ont", 10000)
+    log:
+        "logs/{sample}/summary.log"
+    threads: 1
+    resources:
+        mem_mb = 4000,
+        time = "00:30:00"
+    script:
+        "scripts/generate_summary.py"
+
+# Step 8: Create visualization
+rule plot_coverage:
+    input:
+        tsv = f"{RESULTS_DIR}/{{sample}}/summary_data.tsv"
+    output:
+        pdf = f"{RESULTS_DIR}/{{sample}}/coverage_plot.pdf"
+    params:
+        sample = "{sample}"
+    log:
+        "logs/{sample}/plot.log"
+    threads: 1
+    resources:
+        mem_mb = 4000,
+        time = "00:30:00"
+    conda:
+        "envs/plotting.yaml"
+    script:
+        "scripts/plot_coverage.R"
+
+# Step 9: Combine all samples
+rule combine_summaries:
+    input:
+        expand(f"{RESULTS_DIR}/{{sample}}/summary_data.tsv", sample=SAMPLES)
+    output:
+        f"{RESULTS_DIR}/combined_summary.tsv"
+    log:
+        "logs/combine_summaries.log"
+    threads: 1
+    resources:
+        mem_mb = 2000,
+        time = "00:10:00"
+    run:
+        import pandas as pd
+        import os
+
+        dfs = []
+        for f in input:
+            # Extract sample name from path (handle custom results_dir)
+            parts = f.split('/')
+            # Find the index of RESULTS_DIR in the path
+            sample = parts[-2]  # Sample is the second-to-last directory
+            df = pd.read_csv(f, sep='\t')
+            df['sample'] = sample
+            dfs.append(df)
+
+        combined = pd.concat(dfs, ignore_index=True)
+        combined = combined[['sample', 'organism', 'description', 'mapped_reads',
+                            'unmapped_reads', 'length', 'percentage', 'coverage']]
+        combined.to_csv(output[0], sep='\t', index=False)

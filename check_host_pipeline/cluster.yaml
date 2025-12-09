@@ -1,0 +1,62 @@
+# cluster.yaml
+
+__default__:
+  partition: "medium"
+  time: "01:00:00"
+  mem: "4G"
+  cpus: 1
+
+create_metagenome:
+  time: "01:00:00"
+  mem: "8G"
+  cpus: 1
+
+index_minimap2:
+  time: "01:00:00"
+  mem: "8G"
+  cpus: 1
+
+index_bwa:
+  time: "01:00:00"
+  mem: "8G"
+  cpus: 1
+
+align_ont:
+  time: "06:00:00"
+  mem: "32G"
+  cpus: 16
+
+align_illumina:
+  time: "06:00:00"
+  mem: "32G"
+  cpus: 16
+
+get_idxstats:
+  time: "00:30:00"
+  mem: "4G"
+  cpus: 1
+
+split_bam_by_organism:
+  time: "02:00:00"
+  mem: "16G"
+  cpus: 4
+
+get_organism_stats:
+  time: "00:30:00"
+  mem: "4G"
+  cpus: 1
+
+generate_summary:
+  time: "00:30:00"
+  mem: "4G"
+  cpus: 1
+
+plot_coverage:
+  time: "00:30:00"
+  mem: "4G"
+  cpus: 1
+
+combine_summaries:
+  time: "00:10:00"
+  mem: "2G"
+  cpus: 1

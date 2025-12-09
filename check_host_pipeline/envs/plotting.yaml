@@ -1,0 +1,10 @@
+name: plotting
+channels:
+  - conda-forge
+  - r
+  - defaults
+dependencies:
+  - r-base
+  - r-ggplot2
+  - r-dplyr
+  - r-tidyr

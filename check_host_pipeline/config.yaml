@@ -1,0 +1,33 @@
+# config.yaml
+
+# Path to samples file (tab-delimited: sample_name, seq_type, R1/reads, [R2])
+samples_file: "samples.txt"
+
+# Output directory for results
+results_dir: "20251209_results"
+
+# Reference genomes with explicit prefix mapping
+references:
+  dmel:
+    path: "/private/groups/russelllab/jodie/Jacobs_et_al_2026_de_novo_wRi_merrill_23_assembly/check_host/reference/GCF_000001215.4_Release_6_plus_ISO1_MT_genomic.fna.gz"
+    description: "Drosophila melanogaster"
+  dsim:
+    path: "/private/groups/russelllab/jodie/Jacobs_et_al_2026_de_novo_wRi_merrill_23_assembly/check_host/reference/GCF_016746395.2_Prin_Dsim_3.1_genomic.fna.gz"
+    description: "Drosophila simulans"
+  wRi:
+    path: "/private/groups/russelllab/jodie/Jacobs_et_al_2026_de_novo_wRi_merrill_23_assembly/check_host/reference/GCF_000022285.1_ASM2228v1_genomic.fna.gz"
+    description: "Wolbachia wRi"
+  wMel:
+    path: "/private/groups/russelllab/jodie/Jacobs_et_al_2026_de_novo_wRi_merrill_23_assembly/check_host/reference/GCF_016584425.1_ASM1658442v1_genomic.fna.gz"
+    description: "Wolbachia wMel"
+
+# Organism list (derived from references keys)
+organisms:
+  - "dmel"
+  - "dsim"
+  - "wRi"
+  - "wMel"
+
+# Average read length for coverage calculation
+avg_read_length_ont: 10000      # Nanopore typical range
+avg_read_length_illumina: 150   # Illumina typical range
