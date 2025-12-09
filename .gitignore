@@ -26,3 +26,4 @@ check_host_pipeline/resouce
 check_host_pipeline/20251209_results/
 check_host_pipeline/*results*/
 check_host_pipeline/logs/
+check_host_pipeline/.snakemake/
