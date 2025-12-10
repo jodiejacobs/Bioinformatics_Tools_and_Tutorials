@@ -2,8 +2,8 @@
 
 __default__:
   partition: "medium"
-  time: "01:00:00"
-  mem: "4G"
+  time: "12:00:00"
+  mem: "16G"
   cpus: 1
 
 create_metagenome:
@@ -17,19 +17,19 @@ index_minimap2:
   cpus: 1
 
 index_bwa:
-  time: "01:00:00"
+  time: "06:00:00"
   mem: "8G"
   cpus: 1
 
 align_ont:
-  time: "06:00:00"
+  time: "02:00:00"
   mem: "32G"
   cpus: 16
 
 align_illumina:
-  time: "06:00:00"
+  time: "12:00:00"
   mem: "32G"
-  cpus: 16
+  cpus: 64
 
 get_idxstats:
   time: "00:30:00"
