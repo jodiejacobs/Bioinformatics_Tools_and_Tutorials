@@ -29,5 +29,13 @@ organisms:
   - "wMel"
 
 # Average read length for coverage calculation
-avg_read_length_ont: 10000      # Nanopore typical range
+avg_read_length_ont: 1000      # Nanopore typical range
 avg_read_length_illumina: 150   # Illumina typical range
+
+# Plot colors for each genome
+genome_colors:
+  dmel: "#90EE90"      # light green
+  dsim: "#DDA0DD"      # light purple (plum)
+  wMel: "#006400"      # dark green
+  wRi: "#800080"       # dark purple
+
