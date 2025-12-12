@@ -209,10 +209,10 @@ rule align_illumina:
         bai = f"{RESULTS_DIR}/{{sample}}/aligned.bam.bai"
     log:
         "logs/{sample}/align.log"
-    threads: 16
+    threads: 64
     resources:
-        mem_mb = 32000,
-        time = "06:00:00"
+        mem_mb = 64000,
+        time = "12:00:00"
     wildcard_constraints:
         sample = "|".join(ILLUMINA_SAMPLES)
     conda:
