@@ -1,0 +1,7 @@
+name: ragtag
+channels:
+  - conda-forge
+dependencies:
+  - python_abi=3.13=8_cp313
+
+prefix: "/private/home/jomojaco/miniforge3/envs/ragtag"

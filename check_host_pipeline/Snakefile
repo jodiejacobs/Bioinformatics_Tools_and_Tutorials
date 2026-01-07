@@ -209,9 +209,9 @@ rule align_illumina:
         bai = f"{RESULTS_DIR}/{{sample}}/aligned.bam.bai"
     log:
         "logs/{sample}/align.log"
-    threads: 64
+    threads: 16
     resources:
-        mem_mb = 64000,
+        mem_mb = 128000,
         time = "12:00:00"
     wildcard_constraints:
         sample = "|".join(ILLUMINA_SAMPLES)
@@ -391,3 +391,4 @@ rule combine_summaries:
         combined = combined[['sample', 'organism', 'description', 'mapped_reads',
                             'unmapped_reads', 'length', 'percentage', 'coverage']]
         combined.to_csv(output[0], sep='\t', index=False)
+

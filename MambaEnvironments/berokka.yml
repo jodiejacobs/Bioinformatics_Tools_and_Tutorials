@@ -1,0 +1,5 @@
+name: berokka
+channels:
+dependencies:
+
+prefix: "/private/home/jomojaco/miniforge3/envs/berokka"
