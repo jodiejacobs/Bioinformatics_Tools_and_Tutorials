@@ -301,7 +301,8 @@ rule get_organism_stats:
         bai = f"{RESULTS_DIR}/{{sample}}/split/{{org}}.bam.bai"
     output:
         flagstat = f"{RESULTS_DIR}/{{sample}}/split/{{org}}.flagstat",
-        coverage = f"{RESULTS_DIR}/{{sample}}/split/{{org}}.coverage"
+        coverage = f"{RESULTS_DIR}/{{sample}}/split/{{org}}.coverage",
+        depth = f"{RESULTS_DIR}/{{sample}}/split/{{org}}.depth.txt"
     log:
         "logs/{sample}/stats_{org}.log"
     threads: 1
@@ -314,6 +315,7 @@ rule get_organism_stats:
         """
         samtools flagstat {input.bam} > {output.flagstat} 2> {log}
         samtools coverage {input.bam} > {output.coverage} 2>> {log}
+        samtools depth -a {input.bam} > {output.depth} 2>> {log}
         """
 
 # Step 7: Generate summary report
@@ -324,7 +326,9 @@ rule generate_summary:
         flagstats = expand(f"{RESULTS_DIR}/{{{{sample}}}}/split/{{org}}.flagstat",
                           org=ORGANISMS),
         coverages = expand(f"{RESULTS_DIR}/{{{{sample}}}}/split/{{org}}.coverage",
-                          org=ORGANISMS)
+                          org=ORGANISMS),
+        depths = expand(f"{RESULTS_DIR}/{{{{sample}}}}/split/{{org}}.depth.txt",
+                        org=ORGANISMS)
     output:
         summary = f"{RESULTS_DIR}/{{sample}}/summary_report.txt",
         tsv = f"{RESULTS_DIR}/{{sample}}/summary_data.tsv"

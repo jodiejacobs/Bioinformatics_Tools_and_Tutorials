@@ -2,6 +2,7 @@
 
 import pandas as pd
 import sys
+import statistics
 from pathlib import Path
 
 # Parse inputs
@@ -10,6 +11,30 @@ idxstats_file = snakemake.input.idxstats
 organisms = snakemake.params.organisms
 ref_dict = snakemake.params.ref_dict
 avg_read_length = snakemake.params.avg_read_length
+results_dir = Path(snakemake.output.summary).parent
+
+def parse_depth_file(depth_file):
+    """Calculate depth statistics from samtools depth output"""
+    depths = []
+    try:
+        with open(depth_file, 'r') as f:
+            for line in f:
+                parts = line.strip().split('\t')
+                if len(parts) >= 3:
+                    depth = int(parts[2])
+                    if depth > 0:  # Only consider covered positions
+                        depths.append(depth)
+    except FileNotFoundError:
+        return {'mean_depth': 0, 'median_depth': 0, 'covered_bases': 0}
+    
+    if not depths:
+        return {'mean_depth': 0, 'median_depth': 0, 'covered_bases': 0}
+    
+    return {
+        'mean_depth': statistics.mean(depths),
+        'median_depth': statistics.median(depths),
+        'covered_bases': len(depths)
+    }
 
 # Read idxstats
 data = []
@@ -56,6 +81,16 @@ total_mapped = summary['mapped_reads'].sum()
 summary['percentage'] = 100 * summary['mapped_reads'] / total_mapped
 summary['coverage'] = (summary['mapped_reads'] * avg_read_length) / summary['length']
 
+# Add depth statistics for each organism
+depth_stats_list = []
+for org in summary['organism']:
+    depth_file = results_dir / 'split' / f'{org}.depth.txt'
+    depth_stats = parse_depth_file(depth_file)
+    depth_stats_list.append(depth_stats)
+
+depth_df = pd.DataFrame(depth_stats_list)
+summary = pd.concat([summary.reset_index(drop=True), depth_df], axis=1)
+
 # Sort by mapped reads
 summary = summary.sort_values('mapped_reads', ascending=False)
 
@@ -69,7 +104,11 @@ with open(snakemake.output.summary, 'w') as f:
     for _, row in summary.iterrows():
         f.write(f"{row['organism']:10s} ({row['description']:30s}): "
                 f"{row['mapped_reads']:>10,} reads ({row['percentage']:>5.2f}%) "
-                f"| {row['coverage']:>6.1f}x coverage\n")
+                f"| {row['coverage']:>6.1f}x breadth\n")
+        f.write(f"{'':10s} {'':32s}  "
+                f"Mean depth: {row['mean_depth']:>6.1f}x, "
+                f"Median depth: {row['median_depth']:>6.1f}x, "
+                f"Covered bases: {row['covered_bases']:>10,}\n")
     
     f.write("\n" + "=" * 80 + "\n")
     f.write(f"Total mapped reads: {total_mapped:,}\n")
@@ -86,6 +125,9 @@ with open(snakemake.output.summary, 'w') as f:
         top_host = host_orgs.iloc[0]
         f.write(f"Primary host: {top_host['organism']} ({top_host['description']}) "
                 f"- {top_host['percentage']:.1f}% of reads\n")
+        f.write(f"  Coverage: {top_host['coverage']:.1f}x breadth, "
+                f"{top_host['mean_depth']:.1f}x mean depth, "
+                f"{top_host['median_depth']:.1f}x median depth\n")
         
         # Check for other hosts
         if len(host_orgs) > 1:
@@ -93,12 +135,15 @@ with open(snakemake.output.summary, 'w') as f:
             for _, row in host_orgs.iloc[1:].iterrows():
                 if row['percentage'] > 0.1:  # Only report if >0.1%
                     f.write(f"    - {row['organism']} ({row['description']}): "
-                            f"{row['percentage']:.2f}%\n")
+                            f"{row['percentage']:.2f}% ({row['mean_depth']:.1f}x mean depth)\n")
     
     if not wolb_orgs.empty:
         top_wolb = wolb_orgs.iloc[0]
         f.write(f"Primary Wolbachia: {top_wolb['organism']} ({top_wolb['description']}) "
                 f"- {top_wolb['percentage']:.1f}% of reads\n")
+        f.write(f"  Coverage: {top_wolb['coverage']:.1f}x breadth, "
+                f"{top_wolb['mean_depth']:.1f}x mean depth, "
+                f"{top_wolb['median_depth']:.1f}x median depth\n")
         
         # Calculate titer (Wolbachia/Host ratio)
         if not host_orgs.empty:
@@ -112,7 +157,25 @@ with open(snakemake.output.summary, 'w') as f:
             for _, row in wolb_orgs.iloc[1:].iterrows():
                 if row['percentage'] > 0.1:  # Only report if >0.1%
                     f.write(f"    - {row['organism']} ({row['description']}): "
-                            f"{row['percentage']:.2f}%\n")
+                            f"{row['percentage']:.2f}% ({row['mean_depth']:.1f}x mean depth)\n")
+    
+    # Quality assessment based on depth
+    f.write("\nQuality Assessment:\n")
+    f.write("-" * 80 + "\n")
+    for _, row in summary.iterrows():
+        if row['mapped_reads'] > 0:
+            if row['mean_depth'] > 10:
+                quality = "HIGH"
+            elif row['mean_depth'] > 5:
+                quality = "MEDIUM"
+            elif row['mean_depth'] > 1:
+                quality = "LOW"
+            else:
+                quality = "TRACE"
+            
+            f.write(f"{row['organism']:10s}: {quality:8s} "
+                    f"(mean depth: {row['mean_depth']:.1f}x, "
+                    f"breadth: {row['coverage']:.1f}x)\n")
     
     # Conclusion
     f.write("\n" + "=" * 80 + "\n")
@@ -120,6 +183,11 @@ with open(snakemake.output.summary, 'w') as f:
     if not host_orgs.empty and not wolb_orgs.empty:
         f.write(f"Sample appears to be {top_host['organism']} infected with "
                 f"{top_wolb['organism']}\n")
+        
+        # Add quality note
+        if top_wolb['mean_depth'] < 5:
+            f.write(f"NOTE: Low Wolbachia depth ({top_wolb['mean_depth']:.1f}x) "
+                    f"may indicate contamination or low titer\n")
     elif not host_orgs.empty:
         f.write(f"Sample appears to be {top_host['organism']} (no Wolbachia detected)\n")
     else:
