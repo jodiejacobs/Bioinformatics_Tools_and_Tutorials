@@ -32,5 +32,5 @@ ubkhc-2             ILLUMINA    /private/groups/russelllab/jodie/sequencing_data
 
 # Check the OreR wMel short reads
 Dmel_DB_wMel230707-2    ILLUMINA    /private/groups/russelllab/jodie/Jacobs_et_al_2026_de_novo_wRi_merrill_23_assembly/data_20250828_wMel/short_reads/Dmel_DB_wMel230707-2_S1_L004_R1_001.fastq.gz, /private/groups/russelllab/jodie/Jacobs_et_al_2026_de_novo_wRi_merrill_23_assembly/data_20250828_wMel/short_reads/Dmel_DB_wMel230707-2_S1_L004_R2_001.fastq.gz
-OreR_DBwMel-3           ILLUMINA    /private/groups/russelllab/jodie/Jacobs_et_al_2026_de_novo_wRi_merrill_23_assembly/data_20250828_wMel/short_reads/OreR_DBwMel-3_S17_L004_R1_001.fastq.gz, /private/groups/russelllab/jodie/Jacobs_et_al_2026_de_novo_wRi_merrill_23_assembly/data_20250828_wMel/short_reads/OreR_DBwMel-3_S17_L004_R1_001.fastq.gz 
+OreR_DBwMel-3           ILLUMINA    /private/groups/russelllab/jodie/Jacobs_et_al_2026_de_novo_wRi_merrill_23_assembly/data_20250828_wMel/short_reads/OreR_DBwMel-3_S17_L004_R1_001.fastq.gz, /private/groups/russelllab/jodie/Jacobs_et_al_2026_de_novo_wRi_merrill_23_assembly/data_20250828_wMel/short_reads/OreR_DBwMel-3_S17_L004_R2_001.fastq.gz 
 
