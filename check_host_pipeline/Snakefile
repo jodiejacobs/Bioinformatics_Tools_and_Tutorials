@@ -1,6 +1,9 @@
 # Snakefile for host and Wolbachia strain identity verification
 # Supports both ONT (minimap2) and Illumina (BWA-MEM) sequencing
 
+# Run with:
+# snakemake --executor slurm --default-resources slurm_partition=medium runtime=720 mem_mb=100000 -j 10 -s Snakefile -n
+
 configfile: "config.yaml"
 
 # Parse samples from samples.txt file
@@ -186,11 +189,13 @@ rule align_ont:
         "envs/alignment.yaml"
     shell:
         """
-        minimap2 -ax map-ont -t {threads} {input.mmi} {input.fastq} 2> {log} | \
-            samtools view -bS - | \
-            samtools sort -@ 8 -o {output.bam}
+        rm -f {output.bam}.tmp.*.bam
 
-        samtools index {output.bam}
+        minimap2 -ax map-ont -t {threads} {input.mmi} {input.fastq} 2> {log} | \
+            samtools view -bS -@ {threads} - | \
+            samtools sort -@ {threads} -o {output.bam}
+
+        samtools index -@ {threads} {output.bam}
         """
 
 # Step 3b: Align Illumina reads with BWA-MEM
@@ -209,9 +214,9 @@ rule align_illumina:
         bai = f"{RESULTS_DIR}/{{sample}}/aligned.bam.bai"
     log:
         "logs/{sample}/align.log"
-    threads: 16
+    threads: 64
     resources:
-        mem_mb = 128000,
+        mem_mb = 1000000,
         time = "12:00:00"
     wildcard_constraints:
         sample = "|".join(ILLUMINA_SAMPLES)
@@ -219,11 +224,13 @@ rule align_illumina:
         "envs/alignment.yaml"
     shell:
         """
-        bwa mem -t {threads} {input.fasta} {input.r1} {input.r2} 2> {log} | \
-            samtools view -bS - | \
-            samtools sort -@ 8 -o {output.bam}
+        rm -f {output.bam}.tmp.*.bam
 
-        samtools index {output.bam}
+        bwa mem -t {threads} {input.fasta} {input.r1} {input.r2} 2> {log} | \
+            samtools view -bS -@ {threads} - | \
+            samtools sort -@ {threads} -o {output.bam}
+
+        samtools index -@ {threads} {output.bam}
         """
 
 # Step 4: Get idxstats for all references
