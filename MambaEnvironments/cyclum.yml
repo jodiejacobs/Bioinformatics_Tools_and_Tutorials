@@ -125,4 +125,3 @@ dependencies:
     - scrublet==0.2.3
     - typing_extensions==4.7.1
 
-prefix: "/private/home/jomojaco/miniforge3/envs/cyclum"
